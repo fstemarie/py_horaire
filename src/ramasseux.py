@@ -49,7 +49,7 @@ def get_attachments(message):
 
 @task(name="Save attachment")
 async def save_attachment(fs, filename, content):
-    with fs.open(f"/jade/files/horaire/1- New/{filename}", "wb") as f:
+    with fs.open(f"/d/jade/files/horaire/1- New/{filename}", "wb") as f:
         f.write(content.getbuffer())
 
 
@@ -72,21 +72,23 @@ async def get_smb_pass() -> str:
 
 
 @task(name="Get filesystem")
-def get_fs(host, user, passwd):
+def get_filesystem(host, user, passwd):
     fs = fsspec.filesystem(
         "smb", host=host, username=user, password=passwd.get())
     return fs
 
 
 async def ramasseux_flow():
-    imap_host, imap_user, imap_passwd, smb_host, smb_user, smb_passwd = await asyncio.gather(
+    imap_host, imap_user, imap_passwd = await asyncio.gather(
         get_imap_host(),
         get_imap_user(),
         get_imap_pass(),
-        get_smb_host(),
-        get_smb_user(),
-        get_smb_pass()
     )
+    # smb_host, smb_user, smb_passwd = await asyncio.gather(
+    #     get_smb_host(),
+    #     get_smb_user(),
+    #     get_smb_pass()
+    # )
     with Imbox(hostname=imap_host,
                username=imap_user,
                password=imap_passwd.get()) as imbox:
@@ -96,7 +98,8 @@ async def ramasseux_flow():
             attachments.extend(get_attachments(message))
             imbox.move(uid, "Horaire/pickedup")
 
-        fs = get_fs(smb_host, smb_user, smb_passwd)
+        # fs = get_filesystem(smb_host, smb_user, smb_passwd)
+        fs = fsspec.filesystem("file")
         for filename, content in attachments:
             await save_attachment(fs, filename, content)
 

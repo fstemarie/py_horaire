@@ -16,6 +16,7 @@
 #     https://tools.ietf.org/html/rfc2231.html
 
 import asyncio
+import os
 import re
 from datetime import date, datetime, time, timedelta
 from pprint import pprint
@@ -31,9 +32,10 @@ from prefect.blocks.system import Secret
 from prefect.variables import Variable
 from slugify import slugify
 
-SRC_PATH = "/jade/files/horaire/2- Prepared"
-DEST_PATH = "/jade/files/horaire/3- Processed"
-WEEK = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+SRC_PATH = "/d/jade/files/horaire/2- Prepared"
+DEST_PATH = "/d/jade/files/horaire/3- Processed"
+ICS_PATH = "/d/jade/files/calendars/"
+WEEK = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
 PST = ZoneInfo("America/Vancouver")
 EST = ZoneInfo("America/Montreal")
 UTC = ZoneInfo("UTC")
@@ -57,35 +59,6 @@ async def get_caldav_passwd() -> str:
     return passwd
 
 
-@task(name="Get CalDAV Client")
-async def get_caldav_client(url, username, password) -> caldav.DAVClient:
-    client = await caldav.DAVClient(url=url, username=username, password=password)
-    return client
-
-
-@task(name="Delete CalDAV old events")
-async def del_caldav_old_events(cal: caldav.Calendar):
-    dtend = datetime.now() - timedelta(days=14)
-    old_events = cal.search(event=True, end=dtend)
-    for x in old_events:
-        await x.delete()
-
-
-@task(name="Create CalDAV Events")
-def create_events(client: caldav.DAVClient, schedule: list[dict]):
-    try:
-        cal_employees = client.principal().calendar(name="gs-employees")
-    except caldav.error.NotFoundError:
-        cal_employees = client.principal().make_calendar(name="gs-employees")
-    for x in schedule:
-        try:
-            cal = client.principal().calendar(name=x["cal"])
-        except caldav.error.NotFoundError:
-            cal = client.principal().make_calendar(name=x["cal"])
-        cal_employees.save_event(x["iCal"])
-        cal.save_event(x["iCal"])
-
-
 @task(name="Get SMB host")
 async def get_smb_host() -> str:
     host = await Variable.get("horaire_smb_host")
@@ -104,27 +77,68 @@ async def get_smb_passwd() -> str:
     return passwd
 
 
-@task(name="Get filesystem")
-def get_filesystem(host, user, passwd) -> fsspec.filesystem:
-    fs = fsspec.filesystem(
-        "smb", host=host, username=user, password=passwd.get())
-    return fs
+def extract_schedule(xl_fobj) -> dict:
+    schedule = {}
+    df = pd.read_excel(io=xl_fobj,
+                       engine="openpyxl",
+                       header=None,
+                       names=["employee", *WEEK]).fillna('')
+
+    schedule["employee"] = tuple(df["employee"])
+    for day_of_week in WEEK:
+        schedule[day_of_week] = tuple(df[day_of_week])
+    return schedule
 
 
-def extract_schedule(fs, xl_file) -> pd.DataFrame:
-    with fs.open(xl_file["name"], "rb") as xl_fobj:
-        df = pd.read_excel(io=xl_fobj, engine="openpyxl", header=None, names=[
-                           "employee", *WEEK]).fillna('')
-    return df
+@task(name="Process Excel files")
+async def process_excel_files() -> list[dict]:
+    schedules = []
+    fs = fsspec.filesystem("file")
+    xl_files = fs.ls(SRC_PATH)
+    for xl_file in xl_files:
+        logger.info(f"Processing excel file {xl_file}")
+        with fs.open(xl_file, "rb") as xl_fobj:
+            schedule = extract_schedule(xl_fobj)
+            schedule["filename"] = os.path.basename(xl_file)
+            schedules.append(schedule)
+            fs.mv(xl_file, DEST_PATH)
+    return schedules
 
 
-def cleanup_hours(hours: str) -> str:
+async def build_event(event):
+    ne = icalendar.Event()
+    ne.add("UID", uuid4().hex + "_falarie")
+    ne.add("SUMMARY", event["summary"])
+    ne.add("DESCRIPTION", "")
+    ne.add("DTSTAMP", datetime.now().astimezone(UTC))
+    if event["all_day"]:
+        ne.add("DTSTART", event["start"], parameters={"VALUE": "DATE"})
+        ne.add("DTEND", event["finish"], parameters={"VALUE": "DATE"})
+        ne.add("TRANSP", "TRANSPARENT")
+    else:
+        ne.add("DTSTART", event["start"])
+        ne.add("DTEND", event["finish"])
+    return ne
+
+
+async def build_ical(events):
+    nc = icalendar.Calendar()
+    nc.add("PRODID", "-//falarie/py_horaire")
+    nc.add("VERSION", "2.0")
+    for event in events:
+        ne = await build_event(event)
+        nc.add_component(ne)
+    return nc.to_ical().decode()
+
+
+async def cleanup_hours(hours: str) -> str:
     if hours.lower() == "off":
         return "off"
     elif hours.lower() == "vac":
         return "vac"
 
-    new_hours = hours.replace("`r`n", " ").replace(" PST", "")
+    new_hours = hours
+    new_hours = new_hours.replace("`r`n", " ").replace(" PST", "")
     new_hours = re.sub(r"NO LUNCH", "", new_hours, flags=re.IGNORECASE)
     new_hours = new_hours.replace(" - ", "|")
     new_hours = re.sub(r"LUNCH\s*:", "|", new_hours)
@@ -133,117 +147,113 @@ def cleanup_hours(hours: str) -> str:
     return new_hours
 
 
-def transform_to_date(date_: date, time_: str) -> datetime:
-    if len(time_) < 6:
-        tm = datetime.strptime(time_, "%I%p").time()
+def to_time(time_str: str) -> datetime:
+    if len(time_str) < 6:
+        tm = datetime.strptime(time_str, "%I%p").time()
     else:
-        tm = datetime.strptime(time_, "%I:%M%p").time()
-    return datetime.combine(date_, tm).replace(tzinfo=PST)
+        tm = datetime.strptime(time_str, "%I:%M%p").time()
+    return tm.replace(tzinfo=PST)
 
 
-def process_schedule(schedule_df: pd.DataFrame):
-    schedule = []
+async def process_schedule(schedule):
+    events = []
     for day_of_week in WEEK:
-        for employee, hours in zip(schedule_df["employee"], schedule_df[day_of_week]):
+        for employee, hours in zip(schedule["employee"], schedule[day_of_week]):
             if not hours:  # Empty row
                 continue
             if not employee:  # Dates row
                 day = hours
+                day = day.date()
                 continue
-            hours = cleanup_hours(hours)
+            hours = await cleanup_hours(hours)
             if hours == "off":
-                schedule.append(
+                events.append(
                     dict(employee=employee,
-                         cal="gs-" + slugify(employee),
                          summary=f"Off {employee}",
                          start=day,
                          finish=day + timedelta(days=1),
                          all_day=True))
             elif hours == "vac":
-                schedule.append(
+                events.append(
                     dict(employee=employee,
-                         cal="gs-" + slugify(employee),
                          summary=f"Vacation {employee}",
+                         start=day,
+                         finish=day + timedelta(days=1),
                          all_day=True))
             else:
                 hs = hours.split("|")
-                start = transform_to_date(day, hs[0])
-                finish = transform_to_date(day, hs[1])
-                schedule.append(
+                start = datetime.combine(day, to_time(hs[0]))
+                finish = datetime.combine(day, to_time(hs[1]))
+                events.append(
                     dict(employee=employee,
-                         cal="gs-" + slugify(employee),
                          summary=f"<> {employee}",
                          start=start.astimezone(UTC),
                          finish=finish.astimezone(UTC),
                          all_day=False))
                 if len(hs) == 3:  # Lunch
-                    start = transform_to_date(day, hs[2])
+                    start = datetime.combine(day, to_time(hs[2]))
                     finish = start + timedelta(minutes=30)
-                    schedule.append(
+                    events.append(
                         dict(employee=employee,
-                             cal="gs-" + slugify(employee),
                              summary=f"-- {employee}",
                              start=start.astimezone(UTC),
                              finish=finish.astimezone(UTC),
                              all_day=False))
-    return schedule
+    return events
 
 
-@task(name="Process Excel files")
-async def process_xl_files(fs: fsspec.filesystem) -> list[dict]:
-    xl_files = fs.ls(SRC_PATH)
-    schedule = []
-    for xl_file in xl_files:
-        schedule_df = extract_schedule(fs, xl_file)
-        schedule.extend(process_schedule(schedule_df))
-    return schedule
+@task(name="Prune Calendar")
+async def prune_calendar(client: caldav.DAVClient):
+    logger.info("Deleting events from calendars")
+    # end_date = datetime.now(tz=UTC) - timedelta(days=14)
+    for cal_name in ["gs-collegues", "gs-ste-marie-francois"]:
+        try:
+            cal = client.principal().calendar(name=cal_name)
+        except caldav.error.NotFoundError:
+            cal = client.principal().make_calendar(name=cal_name)
+        # events = cal.search(end=end_date, event=True)
+        events = cal.events()
+        for event in events:
+            event.delete()
 
 
-@task(name="Extrapolate iCal")
-async def extrapolate_iCal(schedule: list[dict]) -> list[dict]:
-    for x in schedule:
-        nev = icalendar.Event()
-        nev.add("UID", uuid4().hex + "_falarie")
-        nev.add("SUMMARY", x["summary"])
-        nev.add("DESCRIPTION", "")
-        nev.add("DTSTAMP", datetime.now().astimezone(UTC))
-        if not x["all_day"]:
-            nev.add("DTSTART", x["start"])
-            nev.add("DTEND", x["finish"])
+@task(name="Fill Calendar")
+async def fill_calendar(client: caldav.DAVClient, events: list[dict]):
+    logger.info("Adding events to calendars")
+    cal = client.principal().calendar(name="gs-collegues")
+    cal_me = client.principal().calendar(name="gs-ste-marie-francois")
+    for event in events:
+        ical = await build_ical([event])
+        if event["employee"] == 'Ste-Marie, François':
+            cal_me.save_event(ical)
         else:
-            nev.add("DTSTART", x["start"])
-            nev.add("DTEND", x["finish"])
-        nc = icalendar.Calendar()
-        nc.add("PRODID", "-//falarie/py_horaire")
-        nc.add("VERSION", "2.0")
-        nc.add_component(nev)
-        x["iCal"] = nc.to_ical().decode()
-    return schedule
+            cal.save_event(ical)
 
 
 @flow(name="Horaire flow")
 async def horaire_flow():
+    global logger
+    logger = get_run_logger()
+
     caldav_url, caldav_user, caldav_passwd = await asyncio.gather(
         get_caldav_url(),
         get_caldav_user(),
         get_caldav_passwd()
     )
-    smb_host, smb_user, smb_passwd = await asyncio.gather(
-        get_smb_host(),
-        get_smb_user(),
-        get_smb_passwd()
-    )
-
-    fs = get_filesystem(smb_host, smb_user, smb_passwd)
-    schedule = await process_xl_files(fs)
-    schedule = await extrapolate_iCal(schedule)
-    with caldav.DAVClient(url=caldav_url,
-                          username=caldav_user,
-                          password=caldav_passwd.get()) as client:
-        create_events(client, schedule)
-    pprint(schedule)
-    # cal = client.principal().calendars()[0]
-
+    schedules = await process_excel_files()
+    client = caldav.DAVClient(url=caldav_url,
+                              username=caldav_user,
+                              password=caldav_passwd.get())
+    await prune_calendar(client)
+    for schedule in schedules:
+        events = await process_schedule(schedule)
+        ics_str = await build_ical(events)
+        ics_file = os.path.join(
+            ICS_PATH, schedule["filename"].replace(".xlsx", ".ics"))
+        with open(ics_file, "w+",) as f:
+            f.write(ics_str)
+        await fill_calendar(client, events)
+    client.close()
 
 if __name__ == "__main__":
     asyncio.run(horaire_flow())
