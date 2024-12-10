@@ -32,9 +32,10 @@ from prefect.blocks.system import Secret
 from prefect.variables import Variable
 from slugify import slugify
 
-SRC_PATH = "/d/jade/files/horaire/2- Prepared"
-DEST_PATH = "/d/jade/files/horaire/3- Processed"
-ICS_PATH = "/d/jade/files/calendars/"
+ROOT_PATH = "./workspace/"
+SRC_PATH = os.path.join(ROOT_PATH, "2- Prepared")
+DEST_PATH = os.path.join(ROOT_PATH, "3- Processed")
+ICS_PATH = os.path.join(ROOT_PATH, "ics")
 WEEK = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
 PST = ZoneInfo("America/Vancouver")
 EST = ZoneInfo("America/Montreal")
@@ -230,8 +231,8 @@ async def fill_calendar(client: caldav.DAVClient, events: list[dict]):
             cal.save_event(ical)
 
 
-@flow(name="Horaire flow")
-async def horaire_flow():
+@flow(name="Horaire")
+async def horaire():
     global logger
     logger = get_run_logger()
 
@@ -256,4 +257,4 @@ async def horaire_flow():
     client.close()
 
 if __name__ == "__main__":
-    asyncio.run(horaire_flow())
+    asyncio.run(horaire())
