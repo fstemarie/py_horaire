@@ -21,7 +21,7 @@ push:
 # pull section allows you to provide instructions for cloning this project in remote locations
 pull:
 - prefect.deployments.steps.git_clone:
-    repository: raktar.local/l/jade/git/francois/py_horaire.git
+    repository: raktar.local:/l/git/py_horaire.git
 
 
 # the deployments section allows you to provide configuration for deploying flows
