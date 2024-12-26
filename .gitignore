@@ -1,3 +1,5 @@
 /.venv
+/workspace
+/Pipfile.lock
+/requirements.txt
 __pycache__
-workspace
