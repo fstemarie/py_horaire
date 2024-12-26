@@ -6,14 +6,12 @@ name = "pypi"
 [packages]
 prefect = "*"
 caldav = "*"
-asyncio = "*"
 icalendar = "*"
 imbox = "*"
 pandas = "*"
 openpyxl = "*"
-fsspec = {extras = ["smbprotocol"], version = "*"}
-smbprotocol = "*"
 python-slugify = "*"
+fsspec = "*"
 
 [dev-packages]
 
