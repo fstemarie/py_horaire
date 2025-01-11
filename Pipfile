@@ -17,4 +17,4 @@ fsspec = "*"
 
 [requires]
 python_version = "3.12"
-python_full_version = "3.12.7"
+python_full_version = "3.12.8"
