@@ -262,4 +262,5 @@ async def horaire():
     client.close()
 
 if __name__ == "__main__":
+    print(f"ROOT_PATH = {ROOT_PATH}")
     asyncio.run(horaire())
