@@ -30,9 +30,10 @@ import pandas as pd
 from prefect import flow, get_run_logger, task
 from prefect.blocks.system import Secret
 from prefect.variables import Variable
+from ramasseux import *
 from slugify import slugify
 
-ROOT_PATH = "./workspace/"
+ROOT_PATH = os.environ.get("HORAIRE_WORKSPACE", default="../workspace")
 SRC_PATH = os.path.join(ROOT_PATH, "2- Prepared")
 DEST_PATH = os.path.join(ROOT_PATH, "3- Processed")
 ICS_PATH = os.path.join(ROOT_PATH, "ics")
@@ -185,6 +186,8 @@ async def process_schedule(schedule):
                 hs = hours.split("|")
                 start = datetime.combine(day, to_time(hs[0]))
                 finish = datetime.combine(day, to_time(hs[1]))
+                if finish < start:
+                    finish += timedelta(days=1)
                 events.append(
                     dict(employee=employee,
                          summary=f"<> {employee}",
@@ -235,6 +238,8 @@ async def fill_calendar(client: caldav.DAVClient, events: list[dict]):
 async def horaire():
     global logger
     logger = get_run_logger()
+
+    await ramasseux()
 
     caldav_url, caldav_user, caldav_passwd = await asyncio.gather(
         get_caldav_url(),

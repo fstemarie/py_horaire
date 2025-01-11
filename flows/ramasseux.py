@@ -5,9 +5,10 @@ import fsspec
 from imbox import Imbox
 from prefect import flow, task
 from prefect.blocks.system import Secret
+from prefect.cache_policies import NONE
 from prefect.variables import Variable
 
-ROOT_PATH = "./workspace"
+ROOT_PATH = os.environ.get("HORAIRE_WORKSPACE", default="../workspace")
 DEST_PATH = os.path.join(ROOT_PATH, "1- New")
 IMAP_QUERY = "label:horaire -label:horaire/pickedup"
 
@@ -30,7 +31,7 @@ async def get_imap_pass() -> str:
     return password
 
 
-@task(name="Get IMAP messages")
+@task(name="Get IMAP messages", cache_policy=NONE)
 def get_imap_messages(imbox):
     messages = imbox.messages(
         folder="all", raw=IMAP_QUERY)
@@ -51,7 +52,7 @@ def get_attachments(message):
 
 @task(name="Save attachment")
 async def save_attachment(fs, filename, content):
-    with fs.open(os.path.join(ROOT_PATH, filename), "wb") as f:
+    with fs.open(os.path.join(DEST_PATH, filename), "wb") as f:
         f.write(content.getbuffer())
 
 
@@ -69,7 +70,7 @@ async def ramasseux():
         attachments = []
         for uid, message in messages:
             attachments.extend(get_attachments(message))
-            imbox.move(uid, "Horaire/pickedup")
+            imbox.move(uid, "horaire/pickedup")
 
         fs = fsspec.filesystem("file")
         for filename, content in attachments:
