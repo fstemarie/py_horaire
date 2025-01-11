@@ -4,60 +4,28 @@
 
 # Generic metadata about this project
 name: py_horaire
-prefect-version: 3.1.7
+prefect-version: 3.1.10
 
 # build section allows you to manage and build docker images
 build:
-- prefect_docker.deployments.steps.build_docker_image:
-    requires: prefect-docker>=0.3.1
-    id: build-image
-    dockerfile: auto
-    image_name: fstemarie/py_horaire
-    tag: latest
 
 # push section allows you to manage if and how this project is uploaded to remote locations
 push:
 
 # pull section allows you to provide instructions for cloning this project in remote locations
 pull:
-- prefect.deployments.steps.git_clone:
-    repository: raktar.local:/l/git/py_horaire.git
-
 
 # the deployments section allows you to provide configuration for deploying flows
 deployments:
-- name: Ramasseux
-  entrypoint: flows/ramasseux.py:ramasseux
-  work-pool:
-    name: lagoon-wp
-    job_variables:
-      volumes:
-      - /d/jade/files/horaire/:/opt/prefect/py_horaire/workspace
+- name: horaire
   version:
   tags: []
   concurrency_limit:
-  description:
+  description: Extrait l'horaire et le met dans mon calendrier
+  entrypoint: ./flows/horaire.py:horaire
   parameters: {}
   work_pool:
-    name: lagoon-wp
-    work_queue_name:
-    job_variables: {}
-  enforce_parameter_schema: true
-  schedules: []
-- name: Horaire
-  entrypoint: flows/horaire.py:horaire
-  work-pool:
-    name: lagoon-wp
-    job_variables:
-      volumes:
-      - /d/jade/files/horaire/:/opt/prefect/py_horaire/workspace
-  version:
-  tags: []
-  concurrency_limit:
-  description:
-  parameters: {}
-  work_pool:
-    name: lagoon-wp
+    name: raktar-wp
     work_queue_name:
     job_variables: {}
   enforce_parameter_schema: true
