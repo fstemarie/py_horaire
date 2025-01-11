@@ -33,7 +33,7 @@ from prefect.variables import Variable
 from ramasseux import *
 from slugify import slugify
 
-ROOT_PATH = os.environ.get("HORAIRE_WORKSPACE", default="../workspace")
+ROOT_PATH = os.environ.get("HORAIRE_WORKSPACE")
 SRC_PATH = os.path.join(ROOT_PATH, "2- Prepared")
 DEST_PATH = os.path.join(ROOT_PATH, "3- Processed")
 ICS_PATH = os.path.join(ROOT_PATH, "ics")

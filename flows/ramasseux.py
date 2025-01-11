@@ -8,7 +8,7 @@ from prefect.blocks.system import Secret
 from prefect.cache_policies import NONE
 from prefect.variables import Variable
 
-ROOT_PATH = os.environ.get("HORAIRE_WORKSPACE", default="../workspace")
+ROOT_PATH = os.environ.get("HORAIRE_WORKSPACE")
 DEST_PATH = os.path.join(ROOT_PATH, "1- New")
 IMAP_QUERY = "label:horaire -label:horaire/pickedup"
 
