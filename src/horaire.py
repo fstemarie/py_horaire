@@ -27,9 +27,6 @@ import caldav
 import fsspec
 import icalendar
 import pandas as pd
-from prefect import flow, get_run_logger, task
-from prefect.blocks.system import Secret
-from prefect.variables import Variable
 from ramasseux import *
 from slugify import slugify
 
@@ -43,39 +40,21 @@ EST = ZoneInfo("America/Montreal")
 UTC = ZoneInfo("UTC")
 
 
-@task(name="Get CalDAV URL")
 async def get_caldav_url() -> str:
-    url = await Variable.get("horaire_caldav_url")
+    print("Getting CalDAV URL")
+    url = "https://radicale.sole-altair.ts.net"
     return url
 
 
-@task(name="Get CalDAV Username")
 async def get_caldav_user() -> str:
-    username = Variable.get("horaire_caldav_user")
-    return await username
-
-
-@task(name="Get CalDAV Password")
-async def get_caldav_passwd() -> str:
-    passwd = await Secret.load("horaire-caldav-pass")
-    return passwd
-
-
-@task(name="Get SMB host")
-async def get_smb_host() -> str:
-    host = await Variable.get("horaire_smb_host")
-    return host
-
-
-@task(name="Get SMB username")
-async def get_smb_user() -> str:
-    username = await Variable.get("horaire_smb_user")
+    print("Getting CalDAV User")
+    username = "py_horaire"
     return username
 
 
-@task(name="Get SMB password")
-async def get_smb_passwd() -> str:
-    passwd = await Secret.load("horaire-smb-pass")
+async def get_caldav_passwd() -> str:
+    print("Getting CalDAV Password")
+    passwd = os.environ.get("HORAIRE_CALDAV_PASS")
     return passwd
 
 
@@ -92,13 +71,11 @@ def extract_schedule(xl_fobj) -> dict:
     return schedule
 
 
-@task(name="Process Excel files")
 async def process_excel_files() -> list[dict]:
     schedules = []
     fs = fsspec.filesystem("file")
     xl_files = fs.ls(SRC_PATH)
     for xl_file in xl_files:
-        logger.info(f"Processing excel file {xl_file}")
         with fs.open(xl_file, "rb") as xl_fobj:
             schedule = extract_schedule(xl_fobj)
             schedule["filename"] = os.path.basename(xl_file)
@@ -124,6 +101,7 @@ async def build_event(event):
 
 
 async def build_ical(events):
+    print(f"Building iCal")
     nc = icalendar.Calendar()
     nc.add("PRODID", "-//falarie/py_horaire")
     nc.add("VERSION", "2.0")
@@ -206,9 +184,8 @@ async def process_schedule(schedule):
     return events
 
 
-@task(name="Prune Calendar")
 async def prune_calendar(client: caldav.DAVClient):
-    logger.info("Deleting events from calendars")
+    print("Pruning calendar")
     # end_date = datetime.now(tz=UTC) - timedelta(days=14)
     for cal_name in ["gs-collegues", "gs-ste-marie-francois"]:
         try:
@@ -221,9 +198,8 @@ async def prune_calendar(client: caldav.DAVClient):
             event.delete()
 
 
-@task(name="Fill Calendar")
 async def fill_calendar(client: caldav.DAVClient, events: list[dict]):
-    logger.info("Adding events to calendars")
+    print("Filling calendar")
     cal = client.principal().calendar(name="gs-collegues")
     cal_me = client.principal().calendar(name="gs-ste-marie-francois")
     for event in events:
@@ -234,30 +210,31 @@ async def fill_calendar(client: caldav.DAVClient, events: list[dict]):
             cal.save_event(ical)
 
 
-@flow(name="Horaire")
 async def horaire():
-    global logger
-    logger = get_run_logger()
-
-    await ramasseux()
-
     caldav_url, caldav_user, caldav_passwd = await asyncio.gather(
         get_caldav_url(),
         get_caldav_user(),
         get_caldav_passwd()
     )
-    schedules = await process_excel_files()
     client = caldav.DAVClient(url=caldav_url,
                               username=caldav_user,
-                              password=caldav_passwd.get())
+                              password=caldav_passwd)
     await prune_calendar(client)
+    schedules = await process_excel_files()
+    if not schedules:
+        print("No Excel files to process")
+        return
+    print("Processing Excel files")
     for schedule in schedules:
+        print("Processing schedule")
         events = await process_schedule(schedule)
+        print("Building iCal")
         ics_str = await build_ical(events)
         ics_file = os.path.join(
             ICS_PATH, schedule["filename"].replace(".xlsx", ".ics"))
         with open(ics_file, "w+",) as f:
             f.write(ics_str)
+        print("Filling calendar")
         await fill_calendar(client, events)
     client.close()
 
