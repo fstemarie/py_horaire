@@ -4,7 +4,6 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-prefect = "*"
 caldav = "*"
 icalendar = "*"
 imbox = "*"
