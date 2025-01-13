@@ -27,7 +27,6 @@ import caldav
 import fsspec
 import icalendar
 import pandas as pd
-from ramasseux import *
 from slugify import slugify
 
 ROOT_PATH = os.environ.get("HORAIRE_WORKSPACE")
@@ -101,7 +100,6 @@ async def build_event(event):
 
 
 async def build_ical(events):
-    print(f"Building iCal")
     nc = icalendar.Calendar()
     nc.add("PRODID", "-//falarie/py_horaire")
     nc.add("VERSION", "2.0")
@@ -185,7 +183,6 @@ async def process_schedule(schedule):
 
 
 async def prune_calendar(client: caldav.DAVClient):
-    print("Pruning calendar")
     # end_date = datetime.now(tz=UTC) - timedelta(days=14)
     for cal_name in ["gs-collegues", "gs-ste-marie-francois"]:
         try:
@@ -199,7 +196,6 @@ async def prune_calendar(client: caldav.DAVClient):
 
 
 async def fill_calendar(client: caldav.DAVClient, events: list[dict]):
-    print("Filling calendar")
     cal = client.principal().calendar(name="gs-collegues")
     cal_me = client.principal().calendar(name="gs-ste-marie-francois")
     for event in events:
