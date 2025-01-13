@@ -8,7 +8,6 @@ services:
       context: .
       tags:
         - "ghcr.io/fstemarie/horaire:latest"
-        - "horaire:latest"
     env_file:
       - ~/secrets/horaire.env
     environment:
