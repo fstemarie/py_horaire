@@ -1,0 +1,22 @@
+---
+
+services:
+  horaire:
+    container_name: horaire
+    image: "ghcr.io/fstemarie/horaire:latest"
+    build:
+      context: .
+      tags:
+        - "ghcr.io/fstemarie/horaire:latest"
+        - "horaire:latest"
+    env_file:
+      - ~/secrets/horaire.env
+    environment:
+      - HORAIRE_WORKSPACE=/workspace
+    volumes:
+      - /d/jade/files/horaire:/workspace
+    dns:
+      - 100.100.100.100
+      - 192.168.0.1
+    working_dir: /app/horaire
+    command: python /app/horaire/horaire.py
