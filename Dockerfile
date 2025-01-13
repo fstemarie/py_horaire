@@ -1,7 +1,7 @@
 # Use the official Python image from the Docker Hub
 FROM docker.io/python:3.12.8-alpine3.21
 
-LABEL org.opencontainers.image.source https://github.com/fstemarie/py_horaire.git
+LABEL org.opencontainers.image.source https://github.com/fstemarie/horaire.git
 
 # Set the working directory in the container
 WORKDIR /app/horaire
@@ -18,6 +18,3 @@ ENV NAME horaire
 ENV HORAIRE_WORKSPACE /workspace
 
 VOLUME /workspace
-
-# Run horaire.py when the container launches
-CMD python ramasseux.py; python horaire.py
