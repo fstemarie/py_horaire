@@ -47,7 +47,7 @@ async def get_caldav_url() -> str:
 
 async def get_caldav_user() -> str:
     print("Getting CalDAV User")
-    username = "py_horaire"
+    username = "horaire"
     return username
 
 
@@ -182,24 +182,21 @@ async def process_schedule(schedule):
     return events
 
 
-async def prune_calendar(client: caldav.DAVClient):
-    # end_date = datetime.now(tz=UTC) - timedelta(days=14)
-    for cal_name in ["gs-collegues", "gs-ste-marie-francois"]:
+def check_calendars(client: caldav.DAVClient):
+    for cal_name in ["gs-collegues", "gs-francois", "gs-tous"]:
         try:
             cal = client.principal().calendar(name=cal_name)
         except caldav.error.NotFoundError:
             cal = client.principal().make_calendar(name=cal_name)
-        # events = cal.search(end=end_date, event=True)
-        events = cal.events()
-        for event in events:
-            event.delete()
 
 
-async def fill_calendar(client: caldav.DAVClient, events: list[dict]):
+async def fill_calendars(client: caldav.DAVClient, events: list[dict]):
     cal = client.principal().calendar(name="gs-collegues")
-    cal_me = client.principal().calendar(name="gs-ste-marie-francois")
+    cal_me = client.principal().calendar(name="gs-francois")
+    cal_all = client.principal().calendar(name="gs-tous")
     for event in events:
         ical = await build_ical([event])
+        cal_all.save_event(ical)
         if event["employee"] == 'Ste-Marie, François':
             cal_me.save_event(ical)
         else:
@@ -215,7 +212,8 @@ async def horaire():
     client = caldav.DAVClient(url=caldav_url,
                               username=caldav_user,
                               password=caldav_passwd)
-    await prune_calendar(client)
+    print("Checking calendars")
+    check_calendars(client)
     schedules = await process_excel_files()
     if not schedules:
         print("No Excel files to process")
@@ -231,7 +229,7 @@ async def horaire():
         with open(ics_file, "w+",) as f:
             f.write(ics_str)
         print("Filling calendar")
-        await fill_calendar(client, events)
+        await fill_calendars(client, events)
     client.close()
 
 if __name__ == "__main__":
