@@ -1,20 +1,5 @@
 #! python
 
-# RFC2045 - Multipurpose Internet Mail Extensions (MIME) Part One
-#     https://tools.ietf.org/html/rfc2045.html
-
-# RFC2046 - Multipurpose Internet Mail Extensions (MIME) Part Two
-#     https://tools.ietf.org/html/rfc2046.html
-
-# RFC2047 - MIME (Multipurpose Internet Mail Extensions) Part Three
-#     https://tools.ietf.org/html/rfc2047.html
-
-# RFC2183 - Communicating Presentation Information in Internet Messages
-#     https://tools.ietf.org/html/rfc2183.html
-
-# RFC2231 - MIME Parameter Value and Encoded Word Extensions
-#     https://tools.ietf.org/html/rfc2231.html
-
 import asyncio
 import os
 import re
@@ -183,7 +168,7 @@ async def process_schedule(schedule):
 
 
 def check_calendars(client: caldav.DAVClient):
-    for cal_name in ["gs-collegues", "gs-francois", "gs-tous"]:
+    for cal_name in ["gs-collegues", "gs-francois"]:
         try:
             cal = client.principal().calendar(name=cal_name)
         except caldav.error.NotFoundError:
@@ -193,10 +178,8 @@ def check_calendars(client: caldav.DAVClient):
 async def fill_calendars(client: caldav.DAVClient, events: list[dict]):
     cal = client.principal().calendar(name="gs-collegues")
     cal_me = client.principal().calendar(name="gs-francois")
-    cal_all = client.principal().calendar(name="gs-tous")
     for event in events:
         ical = await build_ical([event])
-        cal_all.save_event(ical)
         if event["employee"] == 'Ste-Marie, François':
             cal_me.save_event(ical)
         else:
@@ -220,7 +203,7 @@ async def horaire():
         return
     print("Processing Excel files")
     for schedule in schedules:
-        print("Processing schedule")
+        print(f"Processing {schedule['filename']}")
         events = await process_schedule(schedule)
         print("Building iCal")
         ics_str = await build_ical(events)
@@ -228,7 +211,7 @@ async def horaire():
             ICS_PATH, schedule["filename"].replace(".xlsx", ".ics"))
         with open(ics_file, "w+",) as f:
             f.write(ics_str)
-        print("Filling calendar")
+        print("Filling calendars")
         await fill_calendars(client, events)
     client.close()
 
