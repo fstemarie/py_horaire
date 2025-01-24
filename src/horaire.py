@@ -12,7 +12,6 @@ import caldav
 import fsspec
 import icalendar
 import pandas as pd
-from slugify import slugify
 
 ROOT_PATH = os.environ.get("HORAIRE_WORKSPACE")
 SRC_PATH = os.path.join(ROOT_PATH, "2- Prepared")
